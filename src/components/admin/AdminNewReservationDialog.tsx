@@ -1,0 +1,229 @@
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CalendarIcon, Plus } from "lucide-react";
+import { format } from "date-fns";
+import { pl } from "date-fns/locale";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+import { HourSelect } from "@/components/ui/hour-select";
+import { FranchiseeUser } from "@/types/user";
+
+interface AdminNewReservationDialogProps {
+  onReservationCreated?: () => void;
+}
+
+export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewReservationDialogProps = {}) => {
+  const [open, setOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [franchiseeId, setFranchiseeId] = useState("");
+  const [date, setDate] = useState<Date>();
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [franchisees, setFranchisees] = useState<FranchiseeUser[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      loadFranchisees();
+    }
+  }, [open]);
+
+  const loadFranchisees = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('franchisees_view')
+        .select('*')
+        .eq('status', 'aktywny')
+        .order('name');
+
+      if (error) throw error;
+
+      const mappedFranchisees: FranchiseeUser[] = (data || []).map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        phone: f.phone,
+        email: f.email,
+        password: '',
+        role: 'franchisee' as const,
+        status: f.status,
+        storeAddress: f.store_address,
+        mpkNumber: f.mpk_number,
+        termsAccepted: f.terms_accepted,
+        registeredAt: f.registered_at,
+      }));
+
+      setFranchisees(mappedFranchisees);
+    } catch (error) {
+      console.error('Error loading franchisees:', error);
+      toast.error('Błąd ładowania franczyzobiorców');
+    }
+  };
+
+  const generateReservationNumber = async (): Promise<string> => {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('reservation_number')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error;
+      }
+
+      if (data?.reservation_number) {
+        const lastNumber = parseInt(data.reservation_number);
+        const nextNumber = (lastNumber + 1).toString().padStart(4, '0');
+        return nextNumber;
+      }
+
+      return '0001';
+    } catch (error) {
+      console.error('Error generating reservation number:', error);
+      // Fallback: use timestamp-based number
+      return Date.now().toString().slice(-4);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!franchiseeId || !date || !startTime || !endTime) {
+      toast.error("Proszę wypełnić wszystkie pola");
+      return;
+    }
+
+    // Obliczanie godzin (bez walidacji - administrator może dodać dowolny czas)
+    const [startH, startM] = startTime.split(":").map(Number);
+    const [endH, endM] = endTime.split(":").map(Number);
+    const hours = (endH * 60 + endM - (startH * 60 + startM)) / 60;
+
+    setLoading(true);
+
+    try {
+      const reservationNumber = await generateReservationNumber();
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const franchisee = franchisees.find(f => f.id === franchiseeId);
+
+      const { error } = await supabase
+        .from('reservations')
+        .insert({
+          reservation_number: reservationNumber,
+          date: dateStr,
+          start_time: startTime + ':00',
+          end_time: endTime + ':00',
+          hours: hours,
+          status: 'nieprzypisane',
+          franchisee_id: franchiseeId,
+        });
+
+      if (error) throw error;
+
+      toast.success("Zlecenie zostało utworzone", {
+        description: `${franchisee?.mpkNumber} ${franchisee?.name} | ${format(date, "dd.MM.yyyy")} | ${startTime} - ${endTime}`
+      });
+
+      setOpen(false);
+      setFranchiseeId("");
+      setDate(undefined);
+      setStartTime("");
+      setEndTime("");
+
+      // Odśwież listę zleceń przez callback
+      if (onReservationCreated) {
+        onReservationCreated();
+      }
+    } catch (error: any) {
+      console.error('Error creating reservation:', error);
+      toast.error(error.message || 'Błąd tworzenia zlecenia');
+    } finally {
+      setLoading(false);
+    }
+  };
+  return <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="gap-1">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Nowe </span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Utwórz nowe zlecenie</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <Label>Franczyzobiorca</Label>
+            <Select value={franchiseeId} onValueChange={setFranchiseeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Wybierz franczyzobiorcę" />
+              </SelectTrigger>
+              <SelectContent>
+                {franchisees.map(franchisee => (
+                  <SelectItem key={franchisee.id} value={franchisee.id}>
+                    {franchisee.mpkNumber} - {franchisee.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Data zlecenia</Label>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {date ? format(date, "dd MMMM yyyy", {
+                  locale: pl
+                }) : "Wybierz datę"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={date} onSelect={newDate => {
+                setDate(newDate);
+                setCalendarOpen(false);
+              }} initialFocus locale={pl} />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="startTime">Godzina rozpoczęcia</Label>
+              <HourSelect
+                value={startTime}
+                onChange={setStartTime}
+                minHour={0}
+                maxHour={23}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endTime">Godzina zakończenia</Label>
+              <HourSelect
+                value={endTime}
+                onChange={setEndTime}
+                minHour={0}
+                maxHour={23}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1" disabled={loading}>
+              Anuluj
+            </Button>
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? "Tworzenie..." : "Utwórz zlecenie"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>;
+};
