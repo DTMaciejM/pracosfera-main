@@ -4,6 +4,7 @@ import { BarChart, Calendar, Users, CalendarIcon, Search, Download } from "lucid
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { useState, useMemo, useEffect } from "react";
@@ -181,76 +182,61 @@ export const AdminDashboard = () => {
     );
   }, [franchisees, storeSearch]);
   
-  // Filter reservations by worker
-  const workerReservations = selectedWorker === "all" 
-    ? dateFilteredReservations 
-    : dateFilteredReservations.filter(r => r.worker?.id === selectedWorker);
+  // Filter reservations by worker AND franchisee combination
+  const filteredReservations = useMemo(() => {
+    let filtered = dateFilteredReservations;
+    
+    // Filter by worker
+    if (selectedWorker !== "all") {
+      filtered = filtered.filter(r => r.worker?.id === selectedWorker);
+    }
+    
+    // Filter by franchisee
+    if (selectedStore !== "all") {
+      filtered = filtered.filter(r => r.franchisee.id === selectedStore);
+    }
+    
+    return filtered;
+  }, [dateFilteredReservations, selectedWorker, selectedStore]);
   
-  const workerHours = workerReservations.reduce((sum, r) => sum + r.hours, 0);
+  const totalHours = filteredReservations.reduce((sum, r) => sum + r.hours, 0);
+  const reservationCount = filteredReservations.length;
   
-  // Filter reservations by store
-  const storeReservations = selectedStore === "all"
-    ? dateFilteredReservations
-    : dateFilteredReservations.filter(r => r.franchisee.id === selectedStore);
-  
-  const storeHours = storeReservations.reduce((sum, r) => sum + r.hours, 0);
-  const storeCount = storeReservations.length;
+  // Calculate number of unique working days
+  const workingDaysCount = useMemo(() => {
+    const uniqueDates = new Set(filteredReservations.map(r => r.date));
+    return uniqueDates.size;
+  }, [filteredReservations]);
 
-  // CSV Export functions
-  const exportWorkerReport = () => {
-    if (selectedWorker === "all") {
-      toast.error("Wybierz pracownika do eksportu");
+  // CSV Export function
+  const exportReport = () => {
+    if (filteredReservations.length === 0) {
+      toast.info("Brak zleceń do wyeksportowania dla wybranych filtrów");
       return;
     }
 
-    const worker = workers.find(w => w.id === selectedWorker);
-    if (!worker) return;
-
-    const workerReservationsForExport = dateFilteredReservations.filter(r => r.worker?.id === selectedWorker);
+    const workerName = selectedWorker === "all" 
+      ? "Wszyscy_pracownicy" 
+      : workers.find(w => w.id === selectedWorker)?.name.replace(/\s+/g, "_") || "Nieznany";
     
-    const csvHeaders = ["Nr zlecenia", "Data", "Godzina rozpoczęcia", "Godzina zakończenia", "Liczba godzin", "Status", "Franczyzobiorca", "MPK"];
-    const csvRows = workerReservationsForExport.map(r => [
-      r.reservationNumber,
-      format(new Date(r.date), "dd.MM.yyyy"),
-      r.startTime,
-      r.endTime,
-      r.hours.toString(),
-      r.status,
-      r.franchisee.name,
-      r.franchisee.mpkNumber,
-    ]);
-
-    const csvContent = [
-      csvHeaders.join(","),
-      ...csvRows.map(row => row.map(cell => `"${cell}"`).join(","))
-    ].join("\n");
-
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `raport_pracownik_${worker.name.replace(/\s+/g, "_")}_${format(new Date(), "yyyy-MM-dd")}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    toast.success("Raport wyeksportowany");
-  };
-
-  const exportFranchiseeReport = () => {
-    if (selectedStore === "all") {
-      toast.error("Wybierz sklep do eksportu");
-      return;
-    }
-
-    const franchisee = franchisees.find(f => f.id === selectedStore);
-    if (!franchisee) return;
-
-    const storeReservationsForExport = dateFilteredReservations.filter(r => r.franchisee.id === selectedStore);
+    const franchiseeName = selectedStore === "all"
+      ? "Wszystkie_sklepy"
+      : franchisees.find(f => f.id === selectedStore)?.mpkNumber.replace(/\s+/g, "_") || "Nieznany";
     
-    const csvHeaders = ["Nr zlecenia", "Data", "Godzina rozpoczęcia", "Godzina zakończenia", "Liczba godzin", "Status", "Pracownik"];
-    const csvRows = storeReservationsForExport.map(r => [
+    const csvHeaders = [
+      "Nr zlecenia", 
+      "Data", 
+      "Godzina rozpoczęcia", 
+      "Godzina zakończenia", 
+      "Liczba godzin", 
+      "Status", 
+      "Pracownik",
+      "Franczyzobiorca",
+      "MPK",
+      "Adres sklepu"
+    ];
+    
+    const csvRows = filteredReservations.map(r => [
       r.reservationNumber,
       format(new Date(r.date), "dd.MM.yyyy"),
       r.startTime,
@@ -258,6 +244,9 @@ export const AdminDashboard = () => {
       r.hours.toString(),
       r.status,
       r.worker?.name || "Nieprzypisane",
+      r.franchisee.name,
+      r.franchisee.mpkNumber,
+      r.franchisee.storeAddress,
     ]);
 
     const csvContent = [
@@ -269,7 +258,7 @@ export const AdminDashboard = () => {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `raport_franczyzobiorca_${franchisee.mpkNumber}_${format(new Date(), "yyyy-MM-dd")}.csv`);
+    link.setAttribute("download", `raport_${workerName}_${franchiseeName}_${format(new Date(), "yyyy-MM-dd")}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -405,115 +394,90 @@ export const AdminDashboard = () => {
         </Card>
       </div>
 
-      {/* Worker Statistics */}
+      {/* Combined Statistics */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Statystyki pracownika</CardTitle>
-            <CardDescription>Wyszukaj i wybierz pracownika aby zobaczyć szczegóły</CardDescription>
+            <CardTitle>Statystyki</CardTitle>
+            <CardDescription>Wybierz pracownika i franczyzobiorcę aby zobaczyć szczegóły</CardDescription>
           </div>
-          {selectedWorker !== "all" && (
-            <Button onClick={exportWorkerReport} variant="outline" size="sm">
+          {filteredReservations.length > 0 && (
+            <Button onClick={exportReport} variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />
               Eksportuj CSV
             </Button>
           )}
         </CardHeader>
         <CardContent className="space-y-4">
-          <Select value={selectedWorker} onValueChange={setSelectedWorker}>
-            <SelectTrigger>
-              <SelectValue placeholder="Wybierz pracownika" />
-            </SelectTrigger>
-            <SelectContent>
-              <div className="flex items-center border-b px-3 pb-2">
-                <Search className="h-4 w-4 text-muted-foreground mr-2" />
-                <Input
-                  placeholder="Szukaj"
-                  value={workerSearch}
-                  onChange={(e) => setWorkerSearch(e.target.value)}
-                  className="h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-              <SelectItem value="all">Wszyscy pracownicy</SelectItem>
-              {filteredWorkers.map((worker) => (
-                <SelectItem key={worker.id} value={worker.id}>
-                  {worker.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Worker Selection */}
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Liczba zleceń</p>
-              <p className="text-2xl font-bold">{workerReservations.length}</p>
+              <Label>Pracownik</Label>
+              <Select value={selectedWorker} onValueChange={setSelectedWorker}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Wybierz pracownika" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="flex items-center border-b px-3 pb-2">
+                    <Search className="h-4 w-4 text-muted-foreground mr-2" />
+                    <Input
+                      placeholder="Szukaj"
+                      value={workerSearch}
+                      onChange={(e) => setWorkerSearch(e.target.value)}
+                      className="h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  </div>
+                  <SelectItem value="all">Wszyscy pracownicy</SelectItem>
+                  {filteredWorkers.map((worker) => (
+                    <SelectItem key={worker.id} value={worker.id}>
+                      {worker.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Suma godzin</p>
-              <p className="text-2xl font-bold">{workerHours.toFixed(1)}h</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Średnia na zlecenie</p>
-              <p className="text-2xl font-bold">
-                {workerReservations.length > 0 ? (workerHours / workerReservations.length).toFixed(1) : 0}h
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Store Statistics */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Statystyki sklepu</CardTitle>
-            <CardDescription>Wyszukaj i wybierz sklep aby zobaczyć szczegóły</CardDescription>
+            {/* Franchisee Selection */}
+            <div className="space-y-2">
+              <Label>Franczyzobiorca</Label>
+              <Select value={selectedStore} onValueChange={setSelectedStore}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Wybierz franczyzobiorcę" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="flex items-center border-b px-3 pb-2">
+                    <Search className="h-4 w-4 text-muted-foreground mr-2" />
+                    <Input
+                      placeholder="Szukaj"
+                      value={storeSearch}
+                      onChange={(e) => setStoreSearch(e.target.value)}
+                      className="h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  </div>
+                  <SelectItem value="all">Wszystkie sklepy</SelectItem>
+                  {filteredFranchisees.map((franchisee) => (
+                    <SelectItem key={franchisee.id} value={franchisee.id}>
+                      {franchisee.mpkNumber} - {franchisee.storeAddress}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          {selectedStore !== "all" && (
-            <Button onClick={exportFranchiseeReport} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Eksportuj CSV
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Select value={selectedStore} onValueChange={setSelectedStore}>
-            <SelectTrigger>
-              <SelectValue placeholder="Wybierz sklep" />
-            </SelectTrigger>
-            <SelectContent>
-              <div className="flex items-center border-b px-3 pb-2">
-                <Search className="h-4 w-4 text-muted-foreground mr-2" />
-                <Input
-                  placeholder="Szukaj"
-                  value={storeSearch}
-                  onChange={(e) => setStoreSearch(e.target.value)}
-                  className="h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-              <SelectItem value="all">Wszystkie sklepy</SelectItem>
-              {filteredFranchisees.map((franchisee) => (
-                <SelectItem key={franchisee.id} value={franchisee.id}>
-                  {franchisee.mpkNumber} - {franchisee.storeAddress}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           
-          <div className="grid gap-4 md:grid-cols-3">
+          {/* Statistics Display */}
+          <div className="grid gap-4 md:grid-cols-3 pt-4 border-t">
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Liczba zleceń</p>
-              <p className="text-2xl font-bold">{storeCount}</p>
+              <p className="text-2xl font-bold">{reservationCount}</p>
             </div>
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Suma godzin</p>
-              <p className="text-2xl font-bold">{storeHours.toFixed(1)}h</p>
+              <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
             </div>
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Średnia na zlecenie</p>
-              <p className="text-2xl font-bold">
-                {storeCount > 0 ? (storeHours / storeCount).toFixed(1) : 0}h
-              </p>
+              <p className="text-sm text-muted-foreground">Liczba dni pracy</p>
+              <p className="text-2xl font-bold">{workingDaysCount}</p>
             </div>
           </div>
         </CardContent>
