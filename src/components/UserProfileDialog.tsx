@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -25,7 +25,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { mockUsers } from "@/lib/mockUsers";
+import { supabase } from "@/lib/supabase";
+import { hashPassword, comparePassword } from "@/lib/password";
+import { toast as sonnerToast } from "sonner";
 
 const profileSchema = z.object({
   name: z.string().min(2, "Imię i nazwisko musi mieć co najmniej 2 znaki"),
@@ -50,9 +52,10 @@ interface UserProfileDialogProps {
 }
 
 export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -63,6 +66,50 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
     },
   });
 
+  // Load franchisee data when dialog opens
+  useEffect(() => {
+    const loadFranchiseeData = async () => {
+      if (user && user.role === 'franchisee' && open) {
+        try {
+          const { data: franchiseeData, error } = await supabase
+            .from('franchisees')
+            .select('store_address, mpk_number')
+            .eq('id', user.id)
+            .single();
+
+          if (!error && franchiseeData) {
+            profileForm.reset({
+              name: user.name || "",
+              phone: user.phone || "",
+              storeAddress: franchiseeData.store_address || "",
+            });
+          } else {
+            profileForm.reset({
+              name: user.name || "",
+              phone: user.phone || "",
+              storeAddress: "",
+            });
+          }
+        } catch (error) {
+          console.error('Error loading franchisee data:', error);
+          profileForm.reset({
+            name: user.name || "",
+            phone: user.phone || "",
+            storeAddress: "",
+          });
+        }
+      } else if (user && open) {
+        profileForm.reset({
+          name: user.name || "",
+          phone: user.phone || "",
+          storeAddress: "",
+        });
+      }
+    };
+
+    loadFranchiseeData();
+  }, [user, open]);
+
   const passwordForm = useForm<PasswordFormValues>({
     resolver: zodResolver(passwordSchema),
     defaultValues: {
@@ -72,64 +119,114 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
     },
   });
 
-  const onProfileSubmit = (data: ProfileFormValues) => {
+  const onProfileSubmit = async (data: ProfileFormValues) => {
     if (!user) return;
 
-    // Update user in localStorage
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-    const updatedUser = { ...currentUser, ...data };
-    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    setIsSubmitting(true);
+    try {
+      // Update user in Supabase
+      const { error: userError } = await supabase
+        .from('users')
+        .update({
+          name: data.name,
+          phone: data.phone,
+        })
+        .eq('id', user.id);
 
-    // Update in mockUsers (for demo purposes)
-    const userIndex = mockUsers.findIndex(u => u.id === user.id);
-    if (userIndex !== -1) {
-      Object.assign(mockUsers[userIndex], data);
+      if (userError) throw userError;
+
+      // If franchisee, also update store_address in franchisees table
+      if (user.role === 'franchisee' && data.storeAddress !== undefined) {
+        const { error: franchiseeError } = await supabase
+          .from('franchisees')
+          .update({
+            store_address: data.storeAddress,
+          })
+          .eq('id', user.id);
+
+        if (franchiseeError) throw franchiseeError;
+      }
+
+      // Update user in context and localStorage
+      const updatedUserData: Partial<typeof user> = {
+        name: data.name,
+        phone: data.phone,
+      };
+      
+      if (user.role === 'franchisee' && data.storeAddress !== undefined) {
+        (updatedUserData as Partial<FranchiseeUser>).storeAddress = data.storeAddress;
+      }
+
+      updateUser(updatedUserData);
+
+      sonnerToast.success("Dane zaktualizowane", {
+        description: "Twoje dane zostały pomyślnie zaktualizowane.",
+      });
+
+      setOpen(false);
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      sonnerToast.error("Błąd aktualizacji", {
+        description: error.message || "Wystąpił błąd podczas aktualizacji danych.",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    toast({
-      title: "Dane zaktualizowane",
-      description: "Twoje dane zostały pomyślnie zaktualizowane.",
-    });
-
-    // Reload to reflect changes
-    window.location.reload();
   };
 
-  const onPasswordSubmit = (data: PasswordFormValues) => {
+  const onPasswordSubmit = async (data: PasswordFormValues) => {
     if (!user) return;
 
-    // Verify current password
-    const currentUser = mockUsers.find(u => 
-      u.id === user.id && 
-      'password' in u && 
-      u.password === data.currentPassword
-    );
+    setIsSubmitting(true);
+    try {
+      // Get current user from database to verify password
+      const { data: userData, error: fetchError } = await supabase
+        .from('users')
+        .select('password_hash')
+        .eq('id', user.id)
+        .single();
 
-    if (!currentUser) {
-      passwordForm.setError("currentPassword", {
-        message: "Nieprawidłowe aktualne hasło",
+      if (fetchError || !userData) {
+        throw new Error("Nie można pobrać danych użytkownika");
+      }
+
+      // Verify current password
+      const passwordMatch = await comparePassword(data.currentPassword, userData.password_hash);
+      if (!passwordMatch) {
+        passwordForm.setError("currentPassword", {
+          message: "Nieprawidłowe aktualne hasło",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Hash new password
+      const newPasswordHash = await hashPassword(data.newPassword);
+
+      // Update password in Supabase
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password_hash: newPasswordHash })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      sonnerToast.success("Hasło zmienione", {
+        description: "Twoje hasło zostało pomyślnie zmienione.",
       });
-      return;
+
+      passwordForm.reset();
+      setOpen(false);
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      if (!error.message?.includes("Nieprawidłowe")) {
+        sonnerToast.error("Błąd zmiany hasła", {
+          description: error.message || "Wystąpił błąd podczas zmiany hasła.",
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Update password in localStorage
-    const storedUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-    const updatedUser = { ...storedUser, password: data.newPassword };
-    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-
-    // Update in mockUsers
-    const userIndex = mockUsers.findIndex(u => u.id === user.id);
-    if (userIndex !== -1 && 'password' in mockUsers[userIndex]) {
-      (mockUsers[userIndex] as any).password = data.newPassword;
-    }
-
-    toast({
-      title: "Hasło zmienione",
-      description: "Twoje hasło zostało pomyślnie zmienione.",
-    });
-
-    passwordForm.reset();
-    setOpen(false);
   };
 
   return (
@@ -218,11 +315,11 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
                 )}
                 
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>
                     Anuluj
                   </Button>
-                  <Button type="submit">
-                    Zapisz zmiany
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Zapisywanie..." : "Zapisz zmiany"}
                   </Button>
                 </div>
               </form>
@@ -275,12 +372,12 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
                 />
                 
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>
                     Anuluj
                   </Button>
-                  <Button type="submit">
+                  <Button type="submit" disabled={isSubmitting}>
                     <Lock className="h-4 w-4 mr-2" />
-                    Zmień hasło
+                    {isSubmitting ? "Zmienianie..." : "Zmień hasło"}
                   </Button>
                 </div>
               </form>

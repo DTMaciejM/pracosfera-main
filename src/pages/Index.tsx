@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { ReservationCard } from "@/components/ReservationCard";
@@ -109,6 +109,18 @@ const Index = () => {
     return reservations.filter(r => r.status === status);
   };
 
+  // Calculate status counts for tabs
+  const statusCounts = useMemo(() => {
+    return {
+      all: reservations.length,
+      nieprzypisane: reservations.filter(r => r.status === "nieprzypisane").length,
+      przypisane: reservations.filter(r => r.status === "przypisane").length,
+      "w trakcie": reservations.filter(r => r.status === "w trakcie").length,
+      zakończone: reservations.filter(r => r.status === "zakończone").length,
+      anulowane: reservations.filter(r => r.status === "anulowane").length,
+    };
+  }, [reservations]);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -178,12 +190,42 @@ const Index = () => {
         ) : (
           <Tabs defaultValue="all" className="space-y-6">
             <TabsList className="grid w-full grid-cols-2 gap-2 h-auto md:grid-cols-3 lg:inline-grid lg:grid-cols-6">
-              <TabsTrigger value="all">Wszystkie</TabsTrigger>
-              <TabsTrigger value="nieprzypisane" className="[&>span]:pointer-events-none">Nieprzypisane</TabsTrigger>
-              <TabsTrigger value="przypisane" className="[&>span]:pointer-events-none">Przypisane</TabsTrigger>
-              <TabsTrigger value="w trakcie" className="[&>span]:pointer-events-none">W trakcie</TabsTrigger>
-              <TabsTrigger value="zakończone" className="[&>span]:pointer-events-none">Zakończone</TabsTrigger>
-              <TabsTrigger value="anulowane" className="[&>span]:pointer-events-none">Anulowane</TabsTrigger>
+              <TabsTrigger value="all" className="gap-2">
+                Wszystkie
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts.all}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="nieprzypisane" className="gap-2">
+                Nieprzypisane
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts.nieprzypisane}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="przypisane" className="gap-2">
+                Przypisane
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts.przypisane}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="w trakcie" className="gap-2">
+                W trakcie
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts["w trakcie"]}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="zakończone" className="gap-2">
+                Zakończone
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts.zakończone}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="anulowane" className="gap-2">
+                Anulowane
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
+                  {statusCounts.anulowane}
+                </span>
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="space-y-4">

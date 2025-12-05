@@ -200,7 +200,7 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
               <HourSelect
                 value={startTime}
                 onChange={setStartTime}
-                minHour={0}
+                minHour={6}
                 maxHour={23}
               />
             </div>
@@ -209,7 +209,7 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
               <HourSelect
                 value={endTime}
                 onChange={setEndTime}
-                minHour={0}
+                minHour={6}
                 maxHour={23}
               />
             </div>

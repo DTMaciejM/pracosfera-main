@@ -172,8 +172,8 @@ const WorkerPanel = () => {
 
     const shiftHours: Record<string, { start: number; end: number }> = {
       'Z-1': { start: 6, end: 14 },
-      'Z-2': { start: 14, end: 22 },
-      'Z-3': { start: 22, end: 6 },
+      'Z-2': { start: 10, end: 18 },
+      'Z-3': { start: 15, end: 23 },
     };
 
     if (shiftType === 'CUST') {
@@ -202,7 +202,7 @@ const WorkerPanel = () => {
     const resStart = resStartH + resStartM / 60;
     const resEnd = resEndH + resEndM / 60;
 
-    // Handle night shift (Z-3: 22-6)
+    // Handle night shift (spans midnight, e.g., 22-6)
     if (shiftHours.start > shiftHours.end) {
       // Night shift spans midnight
       return resStart >= shiftHours.start || resEnd <= shiftHours.end;

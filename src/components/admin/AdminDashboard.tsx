@@ -183,8 +183,14 @@ export const AdminDashboard = () => {
   }, [franchisees, storeSearch]);
   
   // Filter reservations by worker AND franchisee combination
+  // Only include completed reservations with assigned worker
   const filteredReservations = useMemo(() => {
     let filtered = dateFilteredReservations;
+    
+    // Filter only completed reservations with assigned worker
+    filtered = filtered.filter(r => 
+      r.status === "zakończone" && r.worker !== undefined
+    );
     
     // Filter by worker
     if (selectedWorker !== "all") {

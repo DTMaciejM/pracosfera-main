@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '@/types/user';
+import { User, FranchiseeUser } from '@/types/user';
 import { supabase } from '@/lib/supabase';
 import { comparePassword } from '@/lib/password';
 
@@ -7,6 +7,7 @@ interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  updateUser: (userData: Partial<User>) => void;
   isAuthenticated: boolean;
 }
 
@@ -76,8 +77,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('currentUser');
   };
 
+  const updateUser = (userData: Partial<User | FranchiseeUser>) => {
+    if (user) {
+      const updatedUser = { ...user, ...userData } as User | FranchiseeUser;
+      setUser(updatedUser);
+      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );
