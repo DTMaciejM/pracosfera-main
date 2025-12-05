@@ -227,9 +227,18 @@ const WorkerPanel = () => {
     });
   }, [reservations, workerShifts, customShiftHours, user]);
 
-  const filteredReservations = activeTab === "otwarte"
-    ? openReservations
-    : myReservations.filter(reservation => reservation.status === activeTab);
+  const filteredReservations = useMemo(() => {
+    let filtered = activeTab === "otwarte"
+      ? openReservations
+      : myReservations.filter(reservation => reservation.status === activeTab);
+    
+    // Sortuj według daty (najnowsze na górze)
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+  }, [activeTab, openReservations, myReservations]);
 
   const statusCounts = {
     otwarte: openReservations.length,
@@ -357,32 +366,32 @@ const WorkerPanel = () => {
       <div className="container mx-auto p-4 md:p-8 max-w-7xl">
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReservationStatus | "otwarte" | "historia")} className="space-y-6">
-          <TabsList className="grid grid-cols-2 w-full gap-2 h-auto md:inline-grid md:grid-cols-5">
-            <TabsTrigger value="otwarte" className="gap-2">
+          <TabsList className="grid grid-cols-2 w-full gap-2 h-auto md:inline-grid md:grid-cols-5 bg-background p-1">
+            <TabsTrigger value="otwarte" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               Otwarte
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                 {statusCounts.otwarte}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="przypisane" className="gap-2">
+            <TabsTrigger value="przypisane" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               Przypisane
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                 {statusCounts.przypisane}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="w trakcie" className="gap-2">
+            <TabsTrigger value="w trakcie" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               W trakcie
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                 {statusCounts["w trakcie"]}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="zakończone" className="gap-2">
+            <TabsTrigger value="zakończone" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               Zakończone
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                 {statusCounts.zakończone}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="historia" className="gap-2">
+            <TabsTrigger value="historia" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               Historia
             </TabsTrigger>
           </TabsList>

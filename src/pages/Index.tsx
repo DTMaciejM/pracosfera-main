@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { ReservationCard } from "@/components/ReservationCard";
-import { ReservationDetails } from "@/components/ReservationDetails";
 import { NewReservationDialog } from "@/components/NewReservationDialog";
 import { supabase } from "@/lib/supabase";
 import { Reservation, ReservationStatus } from "@/types/reservation";
@@ -21,8 +20,6 @@ import { UserProfileDialog } from "@/components/UserProfileDialog";
 import { toast } from "sonner";
 
 const Index = () => {
-  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [adminUser, setAdminUser] = useState<{ name: string; phone: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,14 +96,23 @@ const Index = () => {
     }
   };
 
-  const handleCardClick = (reservation: Reservation) => {
-    setSelectedReservation(reservation);
-    setDetailsOpen(true);
-  };
-
   const filterByStatus = (status?: ReservationStatus) => {
-    if (!status) return reservations;
-    return reservations.filter(r => r.status === status);
+    if (!status) {
+      // Sortuj wszystkie zlecenia według daty (najnowsze na górze)
+      return [...reservations].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA;
+      });
+    }
+    // Sortuj filtrowane zlecenia według daty (najnowsze na górze)
+    return reservations
+      .filter(r => r.status === status)
+      .sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA;
+      });
   };
 
   // Calculate status counts for tabs
@@ -189,38 +195,38 @@ const Index = () => {
           <div className="text-center py-12">Ładowanie...</div>
         ) : (
           <Tabs defaultValue="all" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 gap-2 h-auto md:grid-cols-3 lg:inline-grid lg:grid-cols-6">
-              <TabsTrigger value="all" className="gap-2">
+            <TabsList className="grid w-full grid-cols-2 gap-2 h-auto md:grid-cols-3 lg:inline-grid lg:grid-cols-6 bg-background p-1">
+              <TabsTrigger value="all" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 Wszystkie
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts.all}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="nieprzypisane" className="gap-2">
+              <TabsTrigger value="nieprzypisane" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 Nieprzypisane
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts.nieprzypisane}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="przypisane" className="gap-2">
+              <TabsTrigger value="przypisane" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 Przypisane
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts.przypisane}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="w trakcie" className="gap-2">
+              <TabsTrigger value="w trakcie" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 W trakcie
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts["w trakcie"]}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="zakończone" className="gap-2">
+              <TabsTrigger value="zakończone" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 Zakończone
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts.zakończone}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="anulowane" className="gap-2">
+              <TabsTrigger value="anulowane" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
                 Anulowane
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs pointer-events-none">
                   {statusCounts.anulowane}
@@ -235,11 +241,10 @@ const Index = () => {
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {reservations.map((reservation) => (
+                  {filterByStatus().map((reservation) => (
                     <ReservationCard
                       key={reservation.id}
                       reservation={reservation}
-                      onClick={() => handleCardClick(reservation)}
                     />
                   ))}
                 </div>
@@ -260,7 +265,6 @@ const Index = () => {
                         <ReservationCard
                           key={reservation.id}
                           reservation={reservation}
-                          onClick={() => handleCardClick(reservation)}
                         />
                       ))}
                     </div>
@@ -271,12 +275,6 @@ const Index = () => {
           </Tabs>
         )}
       </main>
-
-      <ReservationDetails
-        reservation={selectedReservation}
-        open={detailsOpen}
-        onOpenChange={setDetailsOpen}
-      />
     </div>
   );
 };

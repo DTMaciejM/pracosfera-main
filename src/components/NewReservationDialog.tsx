@@ -66,7 +66,15 @@ export const NewReservationDialog = ({ onReservationCreated }: NewReservationDia
     // Walidacja czasu
     const [startH, startM] = startTime.split(":").map(Number);
     const [endH, endM] = endTime.split(":").map(Number);
-    const hours = (endH * 60 + endM - (startH * 60 + startM)) / 60;
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const hours = (endMinutes - startMinutes) / 60;
+
+    // Walidacja: godzina rozpoczęcia nie może być późniejsza niż godzina zakończenia
+    if (startMinutes >= endMinutes) {
+      toast.error("Godzina rozpoczęcia nie może być późniejsza lub równa godzinie zakończenia");
+      return;
+    }
 
     if (hours < 2) {
       toast.error("Minimalna długość rezerwacji to 2 godziny");

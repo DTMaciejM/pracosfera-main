@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { HourSelect } from "@/components/ui/hour-select";
-import { FranchiseeUser } from "@/types/user";
+import { FranchiseeUser, WorkerUser } from "@/types/user";
 
 interface AdminNewReservationDialogProps {
   onReservationCreated?: () => void;
@@ -25,16 +25,12 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
   const [date, setDate] = useState<Date>();
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [workerId, setWorkerId] = useState("");
   const [franchisees, setFranchisees] = useState<FranchiseeUser[]>([]);
+  const [workers, setWorkers] = useState<WorkerUser[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      loadFranchisees();
-    }
-  }, [open]);
-
-  const loadFranchisees = async () => {
+  const loadFranchisees = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('franchisees_view')
@@ -63,7 +59,53 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
       console.error('Error loading franchisees:', error);
       toast.error('Błąd ładowania franczyzobiorców');
     }
-  };
+  }, []);
+
+  const loadWorkers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('role', 'worker')
+        .eq('status', 'aktywny')
+        .order('name');
+
+      if (error) throw error;
+
+      const mappedWorkers: WorkerUser[] = (data || []).map((w: any) => ({
+        id: w.id,
+        name: w.name,
+        phone: w.phone,
+        email: w.email,
+        password: '',
+        role: 'worker' as const,
+        status: w.status,
+      }));
+
+      setWorkers(mappedWorkers);
+    } catch (error) {
+      console.error('Error loading workers:', error);
+      toast.error('Błąd ładowania pracowników');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadFranchisees().catch(console.error);
+      loadWorkers().catch(console.error);
+    }
+  }, [open, loadFranchisees, loadWorkers]);
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setFranchiseeId("");
+      setDate(undefined);
+      setStartTime("");
+      setEndTime("");
+      setWorkerId("");
+    }
+  }, [open]);
 
   const generateReservationNumber = async (): Promise<string> => {
     try {
@@ -99,10 +141,18 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
       return;
     }
 
-    // Obliczanie godzin (bez walidacji - administrator może dodać dowolny czas)
+    // Obliczanie godzin
     const [startH, startM] = startTime.split(":").map(Number);
     const [endH, endM] = endTime.split(":").map(Number);
-    const hours = (endH * 60 + endM - (startH * 60 + startM)) / 60;
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const hours = (endMinutes - startMinutes) / 60;
+
+    // Walidacja: godzina rozpoczęcia nie może być późniejsza niż godzina zakończenia
+    if (startMinutes >= endMinutes) {
+      toast.error("Godzina rozpoczęcia nie może być późniejsza lub równa godzinie zakończenia");
+      return;
+    }
 
     setLoading(true);
 
@@ -111,17 +161,39 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
       const dateStr = format(date, 'yyyy-MM-dd');
       const franchisee = franchisees.find(f => f.id === franchiseeId);
 
+      // Sprawdź czy data jest w przeszłości
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const reservationDate = new Date(date);
+      reservationDate.setHours(0, 0, 0, 0);
+      const isPastDate = reservationDate < today;
+
+      const insertData: any = {
+        reservation_number: reservationNumber,
+        date: dateStr,
+        start_time: startTime + ':00',
+        end_time: endTime + ':00',
+        hours: hours,
+        franchisee_id: franchiseeId,
+      };
+
+      // Jeśli data jest w przeszłości, automatycznie ustaw status "zakończone"
+      if (isPastDate) {
+        insertData.status = 'zakończone';
+        if (workerId) {
+          insertData.worker_id = workerId;
+        }
+      } else if (workerId) {
+        // Jeśli pracownik jest wybrany, przypisz go i ustaw status na "przypisane"
+        insertData.worker_id = workerId;
+        insertData.status = 'przypisane';
+      } else {
+        insertData.status = 'nieprzypisane';
+      }
+
       const { error } = await supabase
         .from('reservations')
-        .insert({
-          reservation_number: reservationNumber,
-          date: dateStr,
-          start_time: startTime + ':00',
-          end_time: endTime + ':00',
-          hours: hours,
-          status: 'nieprzypisane',
-          franchisee_id: franchiseeId,
-        });
+        .insert(insertData);
 
       if (error) throw error;
 
@@ -134,6 +206,7 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
       setDate(undefined);
       setStartTime("");
       setEndTime("");
+      setWorkerId("");
 
       // Odśwież listę zleceń przez callback
       if (onReservationCreated) {
@@ -213,6 +286,23 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
                 maxHour={23}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Pracownik (opcjonalnie)</Label>
+            <Select value={workerId || "none"} onValueChange={(value) => setWorkerId(value === "none" ? "" : value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Wybierz pracownika (opcjonalnie)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Brak przypisania</SelectItem>
+                {workers.map(worker => (
+                  <SelectItem key={worker.id} value={worker.id}>
+                    {worker.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex gap-3 pt-4">

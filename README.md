@@ -62,6 +62,22 @@ This project is built with:
 
 ## How can I deploy this project?
 
+### Deploy to Coolify
+
+1. **Przygotuj zmienne środowiskowe:**
+   - `VITE_SUPABASE_URL` - URL projektu Supabase
+   - `VITE_SUPABASE_ANON_KEY` - Klucz anonimowy Supabase
+
+2. **W Coolify:**
+   - Utwórz nową aplikację
+   - Połącz z repozytorium Git
+   - Dodaj zmienne środowiskowe
+   - Wdróż aplikację
+
+Szczegółowe instrukcje znajdziesz w pliku [DEPLOY.md](./DEPLOY.md).
+
+### Deploy via Lovable
+
 Simply open [Lovable](https://lovable.dev/projects/00fb7dcb-822c-40f8-a7c7-48edbf3d5784) and click on Share -> Publish.
 
 ## Can I connect a custom domain to my Lovable project?

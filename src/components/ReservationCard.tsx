@@ -23,7 +23,7 @@ export const ReservationCard = ({ reservation, onClick }: ReservationCardProps) 
   
   return (
     <Card 
-      className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
+      className={onClick ? "cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02]" : ""}
       onClick={onClick}
     >
       <CardHeader className="pb-3">

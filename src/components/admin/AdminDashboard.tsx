@@ -46,8 +46,115 @@ export const AdminDashboard = () => {
     }
   };
 
+  // Automatycznie aktualizuj status przeterminowanych zleceń
+  const updateExpiredReservations = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = format(today, 'yyyy-MM-dd');
+
+      // Znajdź wszystkie zlecenia z datą w przeszłości, które nie są zakończone ani anulowane
+      const { data: expiredReservations, error: fetchError } = await supabase
+        .from('reservations')
+        .select('id')
+        .lt('date', todayStr)
+        .in('status', ['nieprzypisane', 'przypisane', 'w trakcie']);
+
+      if (fetchError) throw fetchError;
+
+      // Zaktualizuj status na "zakończone" dla wszystkich przeterminowanych zleceń
+      if (expiredReservations && expiredReservations.length > 0) {
+        const ids = expiredReservations.map(r => r.id);
+        const { error: updateError } = await supabase
+          .from('reservations')
+          .update({ status: 'zakończone' })
+          .in('id', ids);
+
+        if (updateError) throw updateError;
+      }
+    } catch (error) {
+      console.error('Error updating expired reservations:', error);
+      // Nie pokazujemy błędu użytkownikowi, tylko logujemy
+    }
+  };
+
+  // Automatycznie aktualizuj status zleceń na "w trakcie" jeśli są aktualnie w trakcie
+  // oraz na "zakończone" jeśli już się zakończyły
+  const updateActiveReservations = async () => {
+    try {
+      const now = new Date();
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      const todayStr = format(today, 'yyyy-MM-dd');
+      const currentTime = format(now, 'HH:mm:ss');
+      const currentTimeShort = currentTime.substring(0, 5); // HH:MM
+
+      // Pobierz wszystkie zlecenia z dzisiejszą datą, które mają przypisanego pracownika
+      // i status "przypisane" lub "w trakcie"
+      const { data: todayReservations, error: fetchError } = await supabase
+        .from('reservations')
+        .select('id, start_time, end_time, status')
+        .eq('date', todayStr)
+        .in('status', ['przypisane', 'w trakcie'])
+        .not('worker_id', 'is', null);
+
+      if (fetchError) throw fetchError;
+
+      if (!todayReservations || todayReservations.length === 0) return;
+
+      const activeReservationIds: string[] = []; // Zlecenia w trakcie
+      const completedReservationIds: string[] = []; // Zlecenia zakończone
+      
+      for (const reservation of todayReservations) {
+        const startTime = reservation.start_time.substring(0, 5); // HH:MM
+        const endTime = reservation.end_time.substring(0, 5); // HH:MM
+
+        // Sprawdź czy zlecenie jest aktualnie w trakcie (aktualna godzina jest między start_time a end_time)
+        if (currentTimeShort >= startTime && currentTimeShort < endTime) {
+          // Jeśli status to "przypisane", zmień na "w trakcie"
+          if (reservation.status === 'przypisane') {
+            activeReservationIds.push(reservation.id);
+          }
+        }
+        // Sprawdź czy zlecenie już się zakończyło (aktualna godzina >= end_time)
+        else if (currentTimeShort >= endTime) {
+          // Zmień status na "zakończone"
+          completedReservationIds.push(reservation.id);
+        }
+      }
+
+      // Zaktualizuj status na "w trakcie" dla zleceń które są aktualnie w trakcie
+      if (activeReservationIds.length > 0) {
+        const { error: updateError } = await supabase
+          .from('reservations')
+          .update({ status: 'w trakcie' })
+          .in('id', activeReservationIds);
+
+        if (updateError) throw updateError;
+      }
+
+      // Zaktualizuj status na "zakończone" dla zleceń które już się zakończyły
+      if (completedReservationIds.length > 0) {
+        const { error: updateError } = await supabase
+          .from('reservations')
+          .update({ status: 'zakończone' })
+          .in('id', completedReservationIds);
+
+        if (updateError) throw updateError;
+      }
+    } catch (error) {
+      console.error('Error updating active reservations:', error);
+      // Nie pokazujemy błędu użytkownikowi, tylko logujemy
+    }
+  };
+
   const loadReservations = async () => {
     try {
+      // Najpierw zaktualizuj przeterminowane zlecenia
+      await updateExpiredReservations();
+      // Następnie zaktualizuj zlecenia które są aktualnie w trakcie
+      await updateActiveReservations();
+
       const { data, error } = await supabase
         .from('reservations_view')
         .select('*')
