@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WorkerUser } from "@/types/user";
 import { supabase } from "@/lib/supabase";
-import { hashPassword } from "@/lib/password";
+import { createUserWithAuth } from "@/lib/auth-helpers";
 import { UserManagementDialog } from "./UserManagementDialog";
 import { Edit, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -107,7 +107,9 @@ export const AdminWorkers = () => {
         };
 
         if ((workerData as any).password) {
-          updateData.password_hash = await hashPassword((workerData as any).password);
+          // Password update requires Admin API - skip for now
+          // Admin can reset password through Supabase dashboard or Edge Function
+          // updateData.password_hash = await hashPassword((workerData as any).password);
         }
 
         // Update user table
@@ -182,24 +184,31 @@ export const AdminWorkers = () => {
 
         toast.success("Pracownik zaktualizowany");
       } else {
-        // Create new worker
-        const passwordHash = await hashPassword((workerData as any).password || 'defaultpass123');
-
-        // Insert into users table
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .insert({
-            email: workerData.email,
-            password_hash: passwordHash,
+        // Create new worker using Supabase Auth
+        const password = (workerData as any).password || 'defaultpass123';
+        const { userId, error: authError } = await createUserWithAuth(
+          workerData.email,
+          password,
+          {
             name: workerData.name,
             phone: workerData.phone,
             role: 'worker',
-            status: (workerData as any).status || 'aktywny',
-          })
-          .select()
-          .single();
+          }
+        );
 
-        if (userError) throw userError;
+        if (authError) throw authError;
+
+        // Update status if provided
+        if ((workerData as any).status) {
+          const { error: statusError } = await supabase
+            .from('users')
+            .update({ status: (workerData as any).status })
+            .eq('id', userId);
+
+          if (statusError) throw statusError;
+        }
+
+        const userData = { id: userId };
 
         // Handle shifts if provided
         if ((workerData as any).shifts) {

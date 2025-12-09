@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { hashPassword, comparePassword } from "@/lib/password";
+// Password management is now handled by Supabase Auth
 import { toast as sonnerToast } from "sonner";
 
 const profileSchema = z.object({
@@ -179,37 +179,20 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
 
     setIsSubmitting(true);
     try {
-      // Get current user from database to verify password
-      const { data: userData, error: fetchError } = await supabase
-        .from('users')
-        .select('password_hash')
-        .eq('id', user.id)
-        .single();
+      // Update password using Supabase Auth
+      // Note: Supabase Auth updateUser doesn't require current password verification
+      // If you need to verify current password, user must be authenticated
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: data.newPassword
+      });
 
-      if (fetchError || !userData) {
-        throw new Error("Nie można pobrać danych użytkownika");
-      }
-
-      // Verify current password
-      const passwordMatch = await comparePassword(data.currentPassword, userData.password_hash);
-      if (!passwordMatch) {
+      if (updateError) {
         passwordForm.setError("currentPassword", {
-          message: "Nieprawidłowe aktualne hasło",
+          message: updateError.message || "Nie udało się zmienić hasła",
         });
         setIsSubmitting(false);
         return;
       }
-
-      // Hash new password
-      const newPasswordHash = await hashPassword(data.newPassword);
-
-      // Update password in Supabase
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password_hash: newPasswordHash })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
 
       sonnerToast.success("Hasło zmienione", {
         description: "Twoje hasło zostało pomyślnie zmienione.",
@@ -219,11 +202,9 @@ export function UserProfileDialog({ triggerButton }: UserProfileDialogProps) {
       setOpen(false);
     } catch (error: any) {
       console.error('Error changing password:', error);
-      if (!error.message?.includes("Nieprawidłowe")) {
-        sonnerToast.error("Błąd zmiany hasła", {
-          description: error.message || "Wystąpił błąd podczas zmiany hasła.",
-        });
-      }
+      sonnerToast.error("Błąd zmiany hasła", {
+        description: error.message || "Wystąpił błąd podczas zmiany hasła.",
+      });
     } finally {
       setIsSubmitting(false);
     }

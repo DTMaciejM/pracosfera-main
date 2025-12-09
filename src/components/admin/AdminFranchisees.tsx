@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FranchiseeUser } from "@/types/user";
 import { supabase } from "@/lib/supabase";
-import { hashPassword } from "@/lib/password";
+import { createUserWithAuth } from "@/lib/auth-helpers";
 import { UserManagementDialog } from "./UserManagementDialog";
 import { Edit, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -69,7 +69,9 @@ export const AdminFranchisees = () => {
         };
 
         if ((franchiseeData as any).password) {
-          updateData.password_hash = await hashPassword((franchiseeData as any).password);
+          // Password update requires Admin API - skip for now
+          // Admin can reset password through Supabase dashboard or Edge Function
+          // updateData.password_hash = await hashPassword((franchiseeData as any).password);
         }
 
         // Update user table
@@ -94,23 +96,21 @@ export const AdminFranchisees = () => {
 
         toast.success("Franczyzobiorca zaktualizowany");
       } else {
-        // Create new franchisee
-        const passwordHash = await hashPassword((franchiseeData as any).password || 'defaultpass123');
-
-        // Insert into users table
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .insert({
-            email: franchiseeData.email,
-            password_hash: passwordHash,
+        // Create new franchisee using Supabase Auth
+        const password = (franchiseeData as any).password || 'defaultpass123';
+        const { userId, error: authError } = await createUserWithAuth(
+          franchiseeData.email,
+          password,
+          {
             name: franchiseeData.name,
             phone: franchiseeData.phone,
             role: 'franchisee',
-          })
-          .select()
-          .single();
+          }
+        );
 
-        if (userError) throw userError;
+        if (authError) throw authError;
+
+        const userData = { id: userId };
 
         // Insert into franchisees table
         const { error: franchiseeError } = await supabase

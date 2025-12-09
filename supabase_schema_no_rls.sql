@@ -12,8 +12,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, -- Link to Supabase Auth
   email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL, -- Store hashed passwords, never plain text!
+  password_hash VARCHAR(255), -- Optional: Keep for backward compatibility during migration
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(50) NOT NULL,
   role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'worker', 'franchisee')),
@@ -29,13 +30,17 @@ CREATE TABLE IF NOT EXISTS users (
   
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Constraint: Either auth_user_id or password_hash must be present
+  CONSTRAINT users_auth_check CHECK (auth_user_id IS NOT NULL OR password_hash IS NOT NULL)
 );
 
 -- Indexes for users table
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status) WHERE status IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_auth_user_id ON users(auth_user_id) WHERE auth_user_id IS NOT NULL;
 
 -- ============================================
 -- WORKER SHIFTS TABLE

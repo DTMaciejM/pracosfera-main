@@ -8,7 +8,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CalendarDays, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { hashPassword } from '@/lib/password';
 import { toast } from 'sonner';
 
 const Register = () => {
@@ -59,25 +58,44 @@ const Register = () => {
     }
 
     try {
-      // Hash password
-      const passwordHash = await hashPassword(formData.password);
+      // KROK 1: Utwórz użytkownika w Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            name: formData.name,
+            phone: formData.phone,
+            role: 'franchisee',
+          }
+        }
+      });
 
-      // Insert into users table
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Nie udało się utworzyć użytkownika');
+
+      // KROK 2: Utwórz rekord w tabeli users powiązany z auth.users
       const { data: userData, error: userError } = await supabase
         .from('users')
         .insert({
+          id: authData.user.id, // Użyj ID z auth.users
+          auth_user_id: authData.user.id,
           email: formData.email,
-          password_hash: passwordHash,
           name: formData.name,
           phone: formData.phone,
           role: 'franchisee',
+          // password_hash nie jest już potrzebne - Supabase Auth zarządza hasłami
         })
         .select()
         .single();
 
-      if (userError) throw userError;
+      if (userError) {
+        // Jeśli błąd, usuń użytkownika z auth (opcjonalnie)
+        console.error('Error creating user record:', userError);
+        throw userError;
+      }
 
-      // Insert into franchisees table with status 'aktywny'
+      // KROK 3: Utwórz rekord w tabeli franchisees
       const { error: franchiseeError } = await supabase
         .from('franchisees')
         .insert({
