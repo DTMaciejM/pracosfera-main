@@ -67,6 +67,20 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
     }
   }, [onRefreshRef]);
 
+  // Automatyczna aktualizacja statusów co 5 minut
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Aktualizuj statusy w tle i odśwież listę
+      updateExpiredReservations();
+      updateActiveReservations();
+      loadReservations(); // Odśwież listę po aktualizacji
+    }, 5 * 60 * 1000); // 5 minut
+
+    // Wyczyść interwał przy odmontowaniu komponentu
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Funkcje są zdefiniowane w komponencie, więc nie potrzebujemy ich w dependencies
+
   // Automatycznie aktualizuj status przeterminowanych zleceń
   const updateExpiredReservations = async () => {
     try {

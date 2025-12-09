@@ -1,89 +1,75 @@
-# Welcome to your Lovable project
-test
-## Project info
+# Pracosfera - System zarządzania pracownikami
 
-**URL**: https://lovable.dev/projects/00fb7dcb-822c-40f8-a7c7-48edbf3d5784
+System zarządzania pracownikami i zleceniami dla franczyzobiorców.
 
-## How can I edit this code?
+## Opis projektu
 
-There are several ways of editing your application.
+Pracosfera to aplikacja webowa umożliwiająca:
+- Zarządzanie pracownikami i ich harmonogramami
+- Tworzenie i zarządzanie zleceniami
+- Przypisywanie pracowników do zleceń
+- Automatyczną aktualizację statusów zleceń
+- Panel administratora, franczyzobiorcy i pracownika
 
-**Use Lovable**
+## Technologie
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/00fb7dcb-822c-40f8-a7c7-48edbf3d5784) and start prompting.
+Projekt wykorzystuje:
+- **Vite** - Build tool
+- **TypeScript** - Typowanie statyczne
+- **React** - Framework UI
+- **shadcn-ui** - Komponenty UI
+- **Tailwind CSS** - Stylowanie
+- **Supabase** - Baza danych i autentykacja
+- **React Router** - Routing
 
-Changes made via Lovable will be committed automatically to this repo.
+## Instalacja i uruchomienie
 
-**Use your preferred IDE**
+### Wymagania
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- Node.js 20+ (zalecane użycie [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
+- npm lub yarn
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+### Kroki instalacji
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
+# 1. Sklonuj repozytorium
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# 2. Przejdź do katalogu projektu
+cd pracosfera-main
 
-# Step 3: Install the necessary dependencies.
-npm i
+# 3. Zainstaluj zależności
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. Skonfiguruj zmienne środowiskowe
+# Utwórz plik .env w głównym katalogu:
+# VITE_SUPABASE_URL=your-supabase-url
+# VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# 5. Uruchom serwer deweloperski
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Aplikacja będzie dostępna pod adresem `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Wdrożenie
 
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-### Deploy to Coolify
-
-1. **Przygotuj zmienne środowiskowe:**
-   - `VITE_SUPABASE_URL` - URL projektu Supabase
-   - `VITE_SUPABASE_ANON_KEY` - Klucz anonimowy Supabase
-
-2. **W Coolify:**
-   - Utwórz nową aplikację
-   - Połącz z repozytorium Git
-   - Dodaj zmienne środowiskowe
-   - Wdróż aplikację
+### Wdrożenie na Coolify
 
 Szczegółowe instrukcje znajdziesz w pliku [DEPLOY.md](./DEPLOY.md).
 
-### Deploy via Lovable
+### Wymagane zmienne środowiskowe
 
-Simply open [Lovable](https://lovable.dev/projects/00fb7dcb-822c-40f8-a7c7-48edbf3d5784) and click on Share -> Publish.
+- `VITE_SUPABASE_URL` - URL projektu Supabase
+- `VITE_SUPABASE_ANON_KEY` - Klucz anonimowy Supabase
 
-## Can I connect a custom domain to my Lovable project?
+## Dokumentacja
 
-Yes, you can!
+- [DEPLOY.md](./DEPLOY.md) - Instrukcje wdrożenia na Coolify
+- [AUTO_UPDATE_STATUSES.md](./AUTO_UPDATE_STATUSES.md) - Automatyczna aktualizacja statusów zleceń
+- [ARCHITECTURE_RESERVATION_STATUS.md](./ARCHITECTURE_RESERVATION_STATUS.md) - Architektura aktualizacji statusów
+- [MIGRATION_TO_AUTH.md](./MIGRATION_TO_AUTH.md) - Migracja do Supabase Auth
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Licencja
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Wszystkie prawa zastrzeżone.

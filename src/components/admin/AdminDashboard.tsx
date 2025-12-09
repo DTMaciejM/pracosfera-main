@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,19 @@ export const AdminDashboard = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Automatyczna aktualizacja statusów co 5 minut
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Aktualizuj statusy w tle (bez odświeżania całej listy)
+      updateExpiredReservations();
+      updateActiveReservations();
+    }, 5 * 60 * 1000); // 5 minut
+
+    // Wyczyść interwał przy odmontowaniu komponentu
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Funkcje są zdefiniowane w komponencie, więc nie potrzebujemy ich w dependencies
 
   const loadData = async () => {
     try {
