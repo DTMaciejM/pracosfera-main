@@ -40,7 +40,9 @@ Możesz znaleźć te wartości w panelu Supabase:
      VITE_SUPABASE_URL=https://your-project.supabase.co
      VITE_SUPABASE_ANON_KEY=your-anon-key-here
      ```
-   - **WAŻNE:** Zmienne muszą być dostępne podczas buildu, więc upewnij się, że są ustawione przed buildem
+   - **WAŻNE:** Coolify automatycznie przekazuje zmienne środowiskowe jako build arguments do Dockerfile
+   - Upewnij się, że zmienne są ustawione przed rozpoczęciem buildu
+   - Po zmianie zmiennych środowiskowych musisz zrobić redeploy aplikacji
 
 4. **Skonfiguruj porty w sekcji Network:**
    - **Ports Exposes**: `80` ✅ (port wewnątrz kontenera - nginx nasłuchuje na 80)
