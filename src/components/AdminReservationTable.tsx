@@ -31,11 +31,13 @@ import { Input } from "@/components/ui/input";
 import { Edit, UserPlus, UserX, Filter, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { WorkerUser } from "@/types/user";
+import { updateActiveReservations, updateVerificationReservations } from "@/lib/reservation-status-updates";
 
 const statusConfig = {
   nieprzypisane: { label: "Nieprzypisane", variant: "secondary" as const },
   przypisane: { label: "Przypisane", variant: "default" as const },
   "w trakcie": { label: "W trakcie", variant: "default" as const },
+  "do weryfikacji": { label: "Do weryfikacji", variant: "default" as const },
   zakończone: { label: "Zakończone", variant: "outline" as const },
   anulowane: { label: "Anulowane", variant: "destructive" as const },
 };
@@ -73,6 +75,7 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
       // Aktualizuj statusy w tle i odśwież listę
       updateExpiredReservations();
       updateActiveReservations();
+      updateVerificationReservations();
       loadReservations(); // Odśwież listę po aktualizacji
     }, 5 * 60 * 1000); // 5 minut
 
@@ -113,75 +116,6 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
     }
   };
 
-  // Automatycznie aktualizuj status zleceń na "w trakcie" jeśli są aktualnie w trakcie
-  // oraz na "zakończone" jeśli już się zakończyły
-  const updateActiveReservations = async () => {
-    try {
-      const now = new Date();
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const todayStr = format(today, 'yyyy-MM-dd');
-      const currentTime = format(now, 'HH:mm:ss');
-      const currentTimeShort = currentTime.substring(0, 5); // HH:MM
-
-      // Pobierz wszystkie zlecenia z dzisiejszą datą, które mają przypisanego pracownika
-      // i status "przypisane" lub "w trakcie"
-      const { data: todayReservations, error: fetchError } = await supabase
-        .from('reservations')
-        .select('id, start_time, end_time, status')
-        .eq('date', todayStr)
-        .in('status', ['przypisane', 'w trakcie'])
-        .not('worker_id', 'is', null);
-
-      if (fetchError) throw fetchError;
-
-      if (!todayReservations || todayReservations.length === 0) return;
-
-      const activeReservationIds: string[] = []; // Zlecenia w trakcie
-      const completedReservationIds: string[] = []; // Zlecenia zakończone
-      
-      for (const reservation of todayReservations) {
-        const startTime = reservation.start_time.substring(0, 5); // HH:MM
-        const endTime = reservation.end_time.substring(0, 5); // HH:MM
-
-        // Sprawdź czy zlecenie jest aktualnie w trakcie (aktualna godzina jest między start_time a end_time)
-        if (currentTimeShort >= startTime && currentTimeShort < endTime) {
-          // Jeśli status to "przypisane", zmień na "w trakcie"
-          if (reservation.status === 'przypisane') {
-            activeReservationIds.push(reservation.id);
-          }
-        }
-        // Sprawdź czy zlecenie już się zakończyło (aktualna godzina >= end_time)
-        else if (currentTimeShort >= endTime) {
-          // Zmień status na "zakończone"
-          completedReservationIds.push(reservation.id);
-        }
-      }
-
-      // Zaktualizuj status na "w trakcie" dla zleceń które są aktualnie w trakcie
-      if (activeReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'w trakcie' })
-          .in('id', activeReservationIds);
-
-        if (updateError) throw updateError;
-      }
-
-      // Zaktualizuj status na "zakończone" dla zleceń które już się zakończyły
-      if (completedReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'zakończone' })
-          .in('id', completedReservationIds);
-
-        if (updateError) throw updateError;
-      }
-    } catch (error) {
-      console.error('Error updating active reservations:', error);
-      // Nie pokazujemy błędu użytkownikowi, tylko logujemy
-    }
-  };
 
   const loadReservations = async () => {
     try {
@@ -189,6 +123,8 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
       await updateExpiredReservations();
       // Następnie zaktualizuj zlecenia które są aktualnie w trakcie
       await updateActiveReservations();
+      // Zaktualizuj zlecenia do weryfikacji (zmiana na zakończone po 24h)
+      await updateVerificationReservations();
 
       const { data, error } = await supabase
         .from('reservations_view')
@@ -308,8 +244,12 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
         }
       }
       if (updates.date) updateData.date = updates.date;
-      if (updates.startTime) updateData.start_time = updates.startTime;
-      if (updates.endTime) updateData.end_time = updates.endTime;
+      if (updates.startTime) updateData.start_time = updates.startTime.includes(':') && updates.startTime.length === 5 
+        ? updates.startTime + ':00' 
+        : updates.startTime;
+      if (updates.endTime) updateData.end_time = updates.endTime.includes(':') && updates.endTime.length === 5 
+        ? updates.endTime + ':00' 
+        : updates.endTime;
       if (updates.hours !== undefined) updateData.hours = updates.hours;
       if (updates.worker) {
         updateData.worker_id = updates.worker.id;
@@ -419,6 +359,7 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
             <SelectItem value="nieprzypisane">Nieprzypisane</SelectItem>
             <SelectItem value="przypisane">Przypisane</SelectItem>
             <SelectItem value="w trakcie">W trakcie</SelectItem>
+            <SelectItem value="do weryfikacji">Do weryfikacji</SelectItem>
             <SelectItem value="zakończone">Zakończone</SelectItem>
             <SelectItem value="anulowane">Anulowane</SelectItem>
           </SelectContent>
@@ -510,7 +451,9 @@ export const AdminReservationTable = ({ onRefreshRef }: AdminReservationTablePro
                 <TableCell>
                   <Badge 
                     variant={statusConfig[reservation.status].variant}
-                    className="pointer-events-none"
+                    className={`pointer-events-none whitespace-nowrap ${
+                      reservation.status === "do weryfikacji" ? "text-xs" : ""
+                    }`}
                   >
                     {statusConfig[reservation.status].label}
                   </Badge>

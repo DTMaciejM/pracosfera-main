@@ -11,6 +11,7 @@ import { pl } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { sendReservationWebhook } from "@/lib/webhook";
 import { HourSelect } from "@/components/ui/hour-select";
 import { FranchiseeUser, WorkerUser } from "@/types/user";
 
@@ -191,11 +192,78 @@ export const AdminNewReservationDialog = ({ onReservationCreated }: AdminNewRese
         insertData.status = 'nieprzypisane';
       }
 
-      const { error } = await supabase
+      const { data: insertedReservation, error } = await supabase
         .from('reservations')
-        .insert(insertData);
+        .insert(insertData)
+        .select('*')
+        .single();
 
       if (error) throw error;
+
+      // Wyślij webhook z danymi zlecenia
+      if (insertedReservation) {
+        try {
+          // Pobierz dane franczyzobiorcy
+          const { data: franchiseeUserData } = await supabase
+            .from('users')
+            .select('id, name, email, phone')
+            .eq('id', franchiseeId)
+            .single();
+
+          const { data: franchiseeData } = await supabase
+            .from('franchisees')
+            .select('mpk_number, store_address')
+            .eq('id', franchiseeId)
+            .single();
+
+          // Pobierz dane pracownika jeśli został przypisany
+          let workerData = null;
+          if (insertedReservation.worker_id) {
+            const { data: workerUserData } = await supabase
+              .from('users')
+              .select('id, name, email, phone')
+              .eq('id', insertedReservation.worker_id)
+              .single();
+            
+            if (workerUserData) {
+              workerData = {
+                id: workerUserData.id,
+                name: workerUserData.name,
+                email: workerUserData.email,
+                phone: workerUserData.phone,
+              };
+            }
+          }
+
+          const webhookData = {
+            id: insertedReservation.id,
+            reservation_number: insertedReservation.reservation_number,
+            date: insertedReservation.date,
+            start_time: insertedReservation.start_time,
+            end_time: insertedReservation.end_time,
+            hours: insertedReservation.hours,
+            status: insertedReservation.status,
+            worker_id: insertedReservation.worker_id,
+            franchisee_id: insertedReservation.franchisee_id,
+            created_at: insertedReservation.created_at,
+            updated_at: insertedReservation.updated_at,
+            franchisee: {
+              id: franchiseeUserData?.id || franchiseeId,
+              name: franchiseeUserData?.name || franchisee?.name || '',
+              email: franchiseeUserData?.email || franchisee?.email || '',
+              phone: franchiseeUserData?.phone || franchisee?.phone || '',
+              mpk_number: franchiseeData?.mpk_number || franchisee?.mpkNumber,
+              store_address: franchiseeData?.store_address || franchisee?.storeAddress,
+            },
+            worker: workerData,
+          };
+
+          await sendReservationWebhook(webhookData);
+        } catch (webhookError) {
+          console.error('Error sending webhook:', webhookError);
+          // Nie przerywamy procesu jeśli webhook się nie powiedzie
+        }
+      }
 
       toast.success("Zlecenie zostało utworzone", {
         description: `${franchisee?.mpkNumber} ${franchisee?.name} | ${format(date, "dd.MM.yyyy")} | ${startTime} - ${endTime}`

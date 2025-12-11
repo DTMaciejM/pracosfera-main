@@ -15,6 +15,7 @@ import { Reservation } from "@/types/reservation";
 import { WorkerUser } from "@/types/user";
 import { FranchiseeUser } from "@/types/user";
 import { toast } from "sonner";
+import { updateActiveReservations, updateVerificationReservations } from "@/lib/reservation-status-updates";
 
 export const AdminDashboard = () => {
   const [selectedWorker, setSelectedWorker] = useState<string>("all");
@@ -40,6 +41,7 @@ export const AdminDashboard = () => {
       // Aktualizuj statusy w tle (bez odświeżania całej listy)
       updateExpiredReservations();
       updateActiveReservations();
+      updateVerificationReservations();
     }, 5 * 60 * 1000); // 5 minut
 
     // Wyczyść interwał przy odmontowaniu komponentu
@@ -91,75 +93,6 @@ export const AdminDashboard = () => {
     }
   };
 
-  // Automatycznie aktualizuj status zleceń na "w trakcie" jeśli są aktualnie w trakcie
-  // oraz na "zakończone" jeśli już się zakończyły
-  const updateActiveReservations = async () => {
-    try {
-      const now = new Date();
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const todayStr = format(today, 'yyyy-MM-dd');
-      const currentTime = format(now, 'HH:mm:ss');
-      const currentTimeShort = currentTime.substring(0, 5); // HH:MM
-
-      // Pobierz wszystkie zlecenia z dzisiejszą datą, które mają przypisanego pracownika
-      // i status "przypisane" lub "w trakcie"
-      const { data: todayReservations, error: fetchError } = await supabase
-        .from('reservations')
-        .select('id, start_time, end_time, status')
-        .eq('date', todayStr)
-        .in('status', ['przypisane', 'w trakcie'])
-        .not('worker_id', 'is', null);
-
-      if (fetchError) throw fetchError;
-
-      if (!todayReservations || todayReservations.length === 0) return;
-
-      const activeReservationIds: string[] = []; // Zlecenia w trakcie
-      const completedReservationIds: string[] = []; // Zlecenia zakończone
-      
-      for (const reservation of todayReservations) {
-        const startTime = reservation.start_time.substring(0, 5); // HH:MM
-        const endTime = reservation.end_time.substring(0, 5); // HH:MM
-
-        // Sprawdź czy zlecenie jest aktualnie w trakcie (aktualna godzina jest między start_time a end_time)
-        if (currentTimeShort >= startTime && currentTimeShort < endTime) {
-          // Jeśli status to "przypisane", zmień na "w trakcie"
-          if (reservation.status === 'przypisane') {
-            activeReservationIds.push(reservation.id);
-          }
-        }
-        // Sprawdź czy zlecenie już się zakończyło (aktualna godzina >= end_time)
-        else if (currentTimeShort >= endTime) {
-          // Zmień status na "zakończone"
-          completedReservationIds.push(reservation.id);
-        }
-      }
-
-      // Zaktualizuj status na "w trakcie" dla zleceń które są aktualnie w trakcie
-      if (activeReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'w trakcie' })
-          .in('id', activeReservationIds);
-
-        if (updateError) throw updateError;
-      }
-
-      // Zaktualizuj status na "zakończone" dla zleceń które już się zakończyły
-      if (completedReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'zakończone' })
-          .in('id', completedReservationIds);
-
-        if (updateError) throw updateError;
-      }
-    } catch (error) {
-      console.error('Error updating active reservations:', error);
-      // Nie pokazujemy błędu użytkownikowi, tylko logujemy
-    }
-  };
 
   const loadReservations = async () => {
     try {
@@ -167,6 +100,8 @@ export const AdminDashboard = () => {
       await updateExpiredReservations();
       // Następnie zaktualizuj zlecenia które są aktualnie w trakcie
       await updateActiveReservations();
+      // Zaktualizuj zlecenia do weryfikacji (zmiana na zakończone po 24h)
+      await updateVerificationReservations();
 
       const { data, error } = await supabase
         .from('reservations_view')

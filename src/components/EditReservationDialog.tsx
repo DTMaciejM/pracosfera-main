@@ -32,6 +32,7 @@ const statusOptions: { value: ReservationStatus; label: string }[] = [
   { value: "nieprzypisane", label: "Nieprzypisane" },
   { value: "przypisane", label: "Przypisane" },
   { value: "w trakcie", label: "W trakcie" },
+  { value: "do weryfikacji", label: "Do weryfikacji" },
   { value: "zakończone", label: "Zakończone" },
   { value: "anulowane", label: "Anulowane" },
 ];
@@ -58,6 +59,19 @@ export const EditReservationDialog = ({
       return;
     }
 
+    // Obliczanie godzin na podstawie czasu rozpoczęcia i zakończenia
+    const [startH, startM] = formData.startTime.split(":").map(Number);
+    const [endH, endM] = formData.endTime.split(":").map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const hours = (endMinutes - startMinutes) / 60;
+
+    // Walidacja: godzina rozpoczęcia nie może być późniejsza niż godzina zakończenia
+    if (startMinutes >= endMinutes) {
+      toast.error("Godzina rozpoczęcia nie może być późniejsza lub równa godzinie zakończenia");
+      return;
+    }
+
     const selectedWorker = formData.workerId && formData.workerId !== "none"
       ? workers.find((w) => w.id === formData.workerId)
       : undefined;
@@ -66,6 +80,7 @@ export const EditReservationDialog = ({
       date: formData.date,
       startTime: formData.startTime,
       endTime: formData.endTime,
+      hours: hours, // Dodajemy obliczone godziny
       status: formData.status,
       worker: selectedWorker
         ? {

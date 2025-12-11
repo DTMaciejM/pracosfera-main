@@ -197,6 +197,20 @@ export const UserManagementDialog = ({
             />
           </div>
 
+          {user && (
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                disabled
+                className="bg-muted cursor-not-allowed"
+                placeholder="pracownik@email.com"
+              />
+            </div>
+          )}
+
           {!user && (
             <>
               <div className="space-y-2">

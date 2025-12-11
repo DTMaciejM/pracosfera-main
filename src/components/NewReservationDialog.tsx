@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { HourSelect } from "@/components/ui/hour-select";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { sendReservationWebhook } from "@/lib/webhook";
 
 interface NewReservationDialogProps {
   onReservationCreated?: () => void;
@@ -92,7 +93,7 @@ export const NewReservationDialog = ({ onReservationCreated }: NewReservationDia
       const reservationNumber = await generateReservationNumber();
       const dateStr = format(date, 'yyyy-MM-dd');
 
-      const { error } = await supabase
+      const { data: insertedReservation, error } = await supabase
         .from('reservations')
         .insert({
           reservation_number: reservationNumber,
@@ -102,9 +103,51 @@ export const NewReservationDialog = ({ onReservationCreated }: NewReservationDia
           hours: hours,
           status: 'nieprzypisane',
           franchisee_id: user.id,
-        });
+        })
+        .select('*')
+        .single();
 
       if (error) throw error;
+
+      // Wyślij webhook z danymi zlecenia
+      if (insertedReservation) {
+        try {
+          // Pobierz dodatkowe dane franczyzobiorcy z tabeli franchisees
+          const { data: franchiseeData } = await supabase
+            .from('franchisees')
+            .select('mpk_number, store_address')
+            .eq('id', user.id)
+            .single();
+
+          const webhookData = {
+            id: insertedReservation.id,
+            reservation_number: insertedReservation.reservation_number,
+            date: insertedReservation.date,
+            start_time: insertedReservation.start_time,
+            end_time: insertedReservation.end_time,
+            hours: insertedReservation.hours,
+            status: insertedReservation.status,
+            worker_id: insertedReservation.worker_id,
+            franchisee_id: insertedReservation.franchisee_id,
+            created_at: insertedReservation.created_at,
+            updated_at: insertedReservation.updated_at,
+            franchisee: {
+              id: user.id,
+              name: user.name || '',
+              email: user.email || '',
+              phone: user.phone || '',
+              mpk_number: franchiseeData?.mpk_number,
+              store_address: franchiseeData?.store_address,
+            },
+            worker: null,
+          };
+
+          await sendReservationWebhook(webhookData);
+        } catch (webhookError) {
+          console.error('Error sending webhook:', webhookError);
+          // Nie przerywamy procesu jeśli webhook się nie powiedzie
+        }
+      }
 
       toast.success("Rezerwacja została utworzona", {
         description: `Data: ${format(date, "dd.MM.yyyy")} | Godziny: ${startTime} - ${endTime}`

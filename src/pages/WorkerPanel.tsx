@@ -6,7 +6,7 @@ import { Reservation } from "@/types/reservation";
 import { WorkerReservationCard } from "@/components/WorkerReservationCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReservationStatus } from "@/types/reservation";
-import { Phone, LogOut, CalendarDays, CalendarIcon, Clock } from "lucide-react";
+import { Phone, LogOut, CalendarDays, CalendarIcon, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { updateActiveReservations, updateVerificationReservations } from "@/lib/reservation-status-updates";
 import { formatTimeForDisplay } from "@/lib/utils";
 
 const WorkerPanel = () => {
@@ -78,75 +79,6 @@ const WorkerPanel = () => {
     }
   };
 
-  // Automatycznie aktualizuj status zleceń na "w trakcie" jeśli są aktualnie w trakcie
-  // oraz na "zakończone" jeśli już się zakończyły
-  const updateActiveReservations = async () => {
-    try {
-      const now = new Date();
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const todayStr = format(today, 'yyyy-MM-dd');
-      const currentTime = format(now, 'HH:mm:ss');
-      const currentTimeShort = currentTime.substring(0, 5); // HH:MM
-
-      // Pobierz wszystkie zlecenia z dzisiejszą datą, które mają przypisanego pracownika
-      // i status "przypisane" lub "w trakcie"
-      const { data: todayReservations, error: fetchError } = await supabase
-        .from('reservations')
-        .select('id, start_time, end_time, status')
-        .eq('date', todayStr)
-        .in('status', ['przypisane', 'w trakcie'])
-        .not('worker_id', 'is', null);
-
-      if (fetchError) throw fetchError;
-
-      if (!todayReservations || todayReservations.length === 0) return;
-
-      const activeReservationIds: string[] = []; // Zlecenia w trakcie
-      const completedReservationIds: string[] = []; // Zlecenia zakończone
-      
-      for (const reservation of todayReservations) {
-        const startTime = reservation.start_time.substring(0, 5); // HH:MM
-        const endTime = reservation.end_time.substring(0, 5); // HH:MM
-
-        // Sprawdź czy zlecenie jest aktualnie w trakcie (aktualna godzina jest między start_time a end_time)
-        if (currentTimeShort >= startTime && currentTimeShort < endTime) {
-          // Jeśli status to "przypisane", zmień na "w trakcie"
-          if (reservation.status === 'przypisane') {
-            activeReservationIds.push(reservation.id);
-          }
-        }
-        // Sprawdź czy zlecenie już się zakończyło (aktualna godzina >= end_time)
-        else if (currentTimeShort >= endTime) {
-          // Zmień status na "zakończone"
-          completedReservationIds.push(reservation.id);
-        }
-      }
-
-      // Zaktualizuj status na "w trakcie" dla zleceń które są aktualnie w trakcie
-      if (activeReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'w trakcie' })
-          .in('id', activeReservationIds);
-
-        if (updateError) throw updateError;
-      }
-
-      // Zaktualizuj status na "zakończone" dla zleceń które już się zakończyły
-      if (completedReservationIds.length > 0) {
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ status: 'zakończone' })
-          .in('id', completedReservationIds);
-
-        if (updateError) throw updateError;
-      }
-    } catch (error) {
-      console.error('Error updating active reservations:', error);
-      // Nie pokazujemy błędu użytkownikowi, tylko logujemy
-    }
-  };
 
   // Automatyczna aktualizacja statusów co 5 minut
   useEffect(() => {
@@ -156,6 +88,7 @@ const WorkerPanel = () => {
       // Aktualizuj statusy w tle i odśwież listę
       updateExpiredReservations();
       updateActiveReservations();
+      updateVerificationReservations();
       loadReservations(); // Odśwież listę po aktualizacji
     }, 5 * 60 * 1000); // 5 minut
 
@@ -177,6 +110,12 @@ const WorkerPanel = () => {
     if (!user) return;
 
     try {
+      // Najpierw zaktualizuj przeterminowane zlecenia
+      await updateExpiredReservations();
+      // Następnie zaktualizuj zlecenia które są aktualnie w trakcie
+      await updateActiveReservations();
+      // Zaktualizuj zlecenia do weryfikacji (zmiana na zakończone po 24h)
+      await updateVerificationReservations();
       const { data, error } = await supabase
         .from('reservations_view')
         .select('*')
@@ -362,6 +301,7 @@ const WorkerPanel = () => {
     otwarte: openReservations.length,
     przypisane: myReservations.filter(r => r.status === "przypisane").length,
     "w trakcie": myReservations.filter(r => r.status === "w trakcie").length,
+    "do weryfikacji": myReservations.filter(r => r.status === "do weryfikacji").length,
     zakończone: myReservations.filter(r => r.status === "zakończone").length,
   };
 
@@ -484,7 +424,7 @@ const WorkerPanel = () => {
       <div className="container mx-auto p-4 md:p-8 max-w-7xl">
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReservationStatus | "otwarte" | "historia")} className="space-y-6">
-          <TabsList className="grid grid-cols-2 w-full gap-2 h-auto md:inline-grid md:grid-cols-5 bg-background p-1">
+          <TabsList className="grid grid-cols-2 w-full gap-2 h-auto md:inline-grid md:grid-cols-6 bg-background p-1">
             <TabsTrigger value="otwarte" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">
               Otwarte
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -501,6 +441,26 @@ const WorkerPanel = () => {
               W trakcie
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                 {statusCounts["w trakcie"]}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="do weryfikacji" 
+              className={`gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground ${
+                statusCounts["do weryfikacji"] > 0 
+                  ? "bg-orange-50 border-orange-300 text-orange-900 hover:bg-orange-100 data-[state=active]:bg-orange-100 data-[state=active]:border-orange-400" 
+                  : ""
+              }`}
+            >
+              {statusCounts["do weryfikacji"] > 0 && (
+                <AlertTriangle className="h-4 w-4 text-orange-600 animate-pulse" />
+              )}
+              Do weryfikacji
+              <span className={`rounded-full px-2 py-0.5 text-xs ${
+                statusCounts["do weryfikacji"] > 0 
+                  ? "bg-orange-200 text-orange-900" 
+                  : "bg-muted"
+              }`}>
+                {statusCounts["do weryfikacji"]}
               </span>
             </TabsTrigger>
             <TabsTrigger value="zakończone" className="gap-2 border data-[state=active]:bg-muted data-[state=active]:text-foreground">

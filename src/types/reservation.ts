@@ -2,6 +2,7 @@ export type ReservationStatus =
   | 'nieprzypisane' 
   | 'przypisane' 
   | 'w trakcie' 
+  | 'do weryfikacji'
   | 'zakończone' 
   | 'anulowane';
 

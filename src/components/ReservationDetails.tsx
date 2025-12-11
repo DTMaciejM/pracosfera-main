@@ -16,6 +16,7 @@ const statusConfig = {
   nieprzypisane: { label: "Nieprzypisane", variant: "secondary" as const },
   przypisane: { label: "Przypisane", variant: "default" as const },
   "w trakcie": { label: "W trakcie", variant: "default" as const },
+  "do weryfikacji": { label: "Do weryfikacji", variant: "default" as const },
   zakończone: { label: "Zakończone", variant: "outline" as const },
   anulowane: { label: "Anulowane", variant: "destructive" as const },
 };
@@ -24,6 +25,18 @@ export const ReservationDetails = ({ reservation, open, onOpenChange }: Reservat
   if (!reservation) return null;
 
   const statusInfo = statusConfig[reservation.status];
+
+  // Oblicz godziny dynamicznie na podstawie czasu rozpoczęcia i zakończenia
+  const calculateHours = () => {
+    const [startH, startM] = reservation.startTime.split(":").map(Number);
+    const [endH, endM] = reservation.endTime.split(":").map(Number);
+    const startMinutes = startH * 60 + (startM || 0);
+    const endMinutes = endH * 60 + (endM || 0);
+    const hours = (endMinutes - startMinutes) / 60;
+    return hours;
+  };
+  
+  const displayHours = calculateHours();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,7 +75,7 @@ export const ReservationDetails = ({ reservation, open, onOpenChange }: Reservat
               <div>
                 <p className="text-sm text-muted-foreground">Godziny pracy</p>
                 <p className="font-medium">
-                  {reservation.startTime} - {reservation.endTime} ({reservation.hours}h)
+                  {reservation.startTime} - {reservation.endTime} ({Math.round(displayHours)}h)
                 </p>
               </div>
             </div>
